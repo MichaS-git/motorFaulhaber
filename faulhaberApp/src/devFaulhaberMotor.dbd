@@ -3,3 +3,6 @@ device(motor,VME_IO,devMCDC2805, "MCDC2805")
 driver(drvMCDC2805)
 registrar(MCDC2805Register)
 variable(drvMCDC2805debug)
+
+# Model 3 driver
+registrar(MCBL2805Register)

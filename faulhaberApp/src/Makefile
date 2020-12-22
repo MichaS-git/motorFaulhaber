@@ -12,6 +12,9 @@ LIBRARY_IOC = Faulhaber
 # Intelligent Motion Systems driver support.
 SRCS += devMCDC2805.cc drvMCDC2805.cc
 
+# MCBL2805 driver support
+SRCS += MCBL2805Driver.cpp
+
 Faulhaber_LIBS += motor asyn
 Faulhaber_LIBS += $(EPICS_BASE_IOC_LIBS)
 
