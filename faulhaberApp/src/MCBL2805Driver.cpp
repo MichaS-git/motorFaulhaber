@@ -2,7 +2,9 @@
 FILENAME... MCBL2805Driver.cpp
 USAGE...    Motor driver support for the Faulhaber MCBL2805 controller.
 
-Michael Sintschuk
+This driver was tested with a "Guidance with air-beared slides LL-S" from jfa.
+
+msintsch
 December 22, 2020
 
 */
@@ -165,11 +167,11 @@ MCBL2805Axis::MCBL2805Axis(MCBL2805Controller *pC)
   : asynMotorAxis(pC, 0),
     pC_(pC), 
     currentPosition_(0.)
-{
-  static const char *functionName = "MCBL2805Axis::MCBL2805Axis";
-
-  // this probably needs adjustment!
-  stepSize_ = 1000.;
+{ 
+  //asynStatus status;
+  int highLim;
+  
+  //static const char *functionName = "MCBL2805Axis::MCBL2805Axis";
   
   // Read the low and high software limits
   sprintf(pC_->outString_, "%dGNL", pC->controllerID_);
@@ -177,11 +179,23 @@ MCBL2805Axis::MCBL2805Axis(MCBL2805Controller *pC)
   lowLimit_ = atof(&pC_->inString_[3]);
   sprintf(pC_->outString_, "%dGPL", pC->controllerID_);
   pC_->writeReadController();
+  sscanf(pC_->inString_, "%d", &highLim);
   highLimit_ = atof(&pC_->inString_[3]);
+  
+  if (highLim == 1095001)
+  {
+	  setIntegerParam(pC_->motorStatusHomed_, 1);
+	  //printf("motor is homed\n");
+  }
+  
+  // set maximum deviation, default is 10
+  sprintf(pC_->outString_, "%dDEV100", pC_->controllerID_);
+  pC_->writeMCBL2805();
 
-  // activate the motor
-  sprintf(pC_->outString_, "%dEN", pC_->controllerID_);
-  status = pC_->writeMCBL2805();  
+  // Activate the motor. 
+  // It is cativated on default at start up.
+  //sprintf(pC_->outString_, "%dEN", pC_->controllerID_);
+  //status = pC_->writeMCBL2805();
 
 }
 
@@ -195,10 +209,14 @@ void MCBL2805Axis::report(FILE *fp, int level)
 {
   if (level > 0) {
 
-    fprintf(fp, "  currentPosition=%f\n"
+    /*fprintf(fp, "  currentPosition=%f\n"
                 "  stepSize=%f, lowLimit=%f, highLimit=%f\n",
             currentPosition_, 
-            stepSize_, lowLimit_, highLimit_,);
+            stepSize_, lowLimit_, highLimit_);*/
+	fprintf(fp, "  currentPosition=%f\n"
+                "  lowLimit=%f, highLimit=%f\n",
+            currentPosition_, 
+            lowLimit_, highLimit_);
   }
 
   // Call the base class method
@@ -210,15 +228,22 @@ asynStatus MCBL2805Axis::move(double position, int relative, double minVelocity,
   asynStatus status;
   // static const char *functionName = "MCBL2805Axis::move";
   
-  // Acceleration and velocity are saved in the EEPROM, we dont want to change them
+  // Acceleration and velocity are set after the homerun, we dont want the use to change them
 
   if (relative) {
-    sprintf(pC_->outString_, "%dLR%f", pC_->controllerID_, position*stepSize_);
+    sprintf(pC_->outString_, "%dLR%f", pC_->controllerID_, position);
     status = pC_->writeMCBL2805();
   } else {
-    sprintf(pC_->outString_, "%dLA%f", pC_->controllerID_, position*stepSize_);
+    sprintf(pC_->outString_, "%dLA%f", pC_->controllerID_, position);
     status = pC_->writeMCBL2805();
   }
+  
+  // Notify Position. Without "NP" "Bit 4:  1 ... Command position has been reached" is not set properly.
+  sprintf(pC_->outString_, "%dNP", pC_->controllerID_);
+  status = pC_->writeMCBL2805();
+  
+  // delay before movement, in order to lift the table
+  epicsThreadSleep(0.5);
   
   sprintf(pC_->outString_, "%dM", pC_->controllerID_);
   status = pC_->writeMCBL2805();
@@ -228,22 +253,59 @@ asynStatus MCBL2805Axis::move(double position, int relative, double minVelocity,
 asynStatus MCBL2805Axis::home(double minVelocity, double maxVelocity, double acceleration, int forwards)
 {
   asynStatus status;
+  int velocity;
+  //int position;
   //static const char *functionName = "MCBL2805Axis::home";
+  
+  // delay before movement, in order to lift the table
+  epicsThreadSleep(0.5);
   
   // Initialize homesequence
   sprintf(pC_->outString_, "%dGOHOSEQ", pC_->controllerID_);
   status = pC_->writeMCBL2805();
   
-  // now we have to wait until the motor reaches the limit
-  // to-do: wait for the velocity to be zero... possible?
-  epicsThreadSleep(10.0);
+  sprintf(pC_->outString_, "%dGV", pC_->controllerID_);
+  pC_->writeReadController();
+  sscanf(pC_->inString_, "%d", &velocity);
+  
+  // we need to look at the motor velocity because "Bit 4:  1 ... Command position has been reached"
+  // seems not to work properly
+  do
+  {
+	    sprintf(pC_->outString_, "%dGV", pC_->controllerID_);
+		pC_->writeReadController();
+		sscanf(pC_->inString_, "%d", &velocity);
+		
+		// Read the current motor position.
+		// But sending it to pC_->motorPosition_ doesnt't work... need fix!
+		/*sprintf(pC_->outString_, "%dPOS", pC_->controllerID_);
+		pC_->writeReadController();
+		sscanf(pC_->inString_, "%d", &position);
+		setDoubleParam(pC_->motorPosition_, position);*/
+		
+		epicsThreadSleep(1.);
+  } while (abs(velocity) > 20);
+  
+  epicsThreadSleep(3.0);
   
   // motor runs out to Hall zero and sets the position value to 0
   sprintf(pC_->outString_, "%dGOHIX", pC_->controllerID_);
   status = pC_->writeMCBL2805();
   
-  // to-do: wait for the velocity to be zero... possible?
-  epicsThreadSleep(5.0);
+  sprintf(pC_->outString_, "%dGV", pC_->controllerID_);
+  pC_->writeReadController();
+  sscanf(pC_->inString_, "%d", &velocity);
+  
+  do
+  {
+	    sprintf(pC_->outString_, "%dGV", pC_->controllerID_);
+		pC_->writeReadController();
+		sscanf(pC_->inString_, "%d", &velocity);
+		
+		epicsThreadSleep(1.);
+  } while (abs(velocity) > 20);
+  
+  epicsThreadSleep(3.0);
   
   // Switches to encoder mode. Uses external encoder for actual position
   sprintf(pC_->outString_, "%dENCMOD", pC_->controllerID_);
@@ -253,24 +315,57 @@ asynStatus MCBL2805Axis::home(double minVelocity, double maxVelocity, double acc
   sprintf(pC_->outString_, "%dHALLSPEED", pC_->controllerID_);
   status = pC_->writeMCBL2805();
   
+  // Load integral term.
+  sprintf(pC_->outString_, "%dI5", pC_->controllerID_);
+  status = pC_->writeMCBL2805();
+  
+  // Load a small maximum velocity. 
+  sprintf(pC_->outString_, "%dSP128", pC_->controllerID_);
+  status = pC_->writeMCBL2805();
+  
+  // Load a small acceleration. 
+  sprintf(pC_->outString_, "%dAC1", pC_->controllerID_);
+  status = pC_->writeMCBL2805();
+  
   // move 10mm
   sprintf(pC_->outString_, "%dLA-10000", pC_->controllerID_);
   status = pC_->writeMCBL2805();
   sprintf(pC_->outString_, "%dM", pC_->controllerID_);
   status = pC_->writeMCBL2805();
   
-  // to-do: wait for the velocity to be zero... possible?
-  epicsThreadSleep(5.0);
+  do
+  {
+	    sprintf(pC_->outString_, "%dGV", pC_->controllerID_);
+		pC_->writeReadController();
+		sscanf(pC_->inString_, "%d", &velocity);
+		
+		epicsThreadSleep(.25);
+  } while (abs(velocity) > 20);
+  
+  epicsThreadSleep(3.0);
   
   // set this position to 1095mm
   sprintf(pC_->outString_, "%dHO1095000", pC_->controllerID_);
   status = pC_->writeMCBL2805();
   
-  // activate the limit switches, at an edge the motor will stop
+  // activate the limit switches. At an edge the motor will stop.
   sprintf(pC_->outString_, "%dHL6", pC_->controllerID_);
   status = pC_->writeMCBL2805();
   
-  setIntegerParam(pC_->motorStatusHome_, 1);
+  //  Loads position range limits. Positive values give upper limit and negative values the lower limit.
+  sprintf(pC_->outString_, "%dLL-30001", pC_->controllerID_);
+  status = pC_->writeMCBL2805();
+  sprintf(pC_->outString_, "%dLL1095001", pC_->controllerID_);
+  status = pC_->writeMCBL2805();
+  
+  // Load a faster maximum velocity. 
+  sprintf(pC_->outString_, "%dSP1024", pC_->controllerID_);
+  status = pC_->writeMCBL2805();
+  
+  // Load a bigger acceleration. 
+  sprintf(pC_->outString_, "%dAC6", pC_->controllerID_);
+  status = pC_->writeMCBL2805();
+
   setIntegerParam(pC_->motorStatusHomed_, 1);
   
   return status;
@@ -282,6 +377,12 @@ asynStatus MCBL2805Axis::stop(double acceleration )
   //static const char *functionName = "MCBL2805Axis::stop";
 
   sprintf(pC_->outString_, "%dV0", pC_->controllerID_);
+  status = pC_->writeMCBL2805();
+  
+  sprintf(pC_->outString_, "%dLR0", pC_->controllerID_);
+  status = pC_->writeMCBL2805();
+  
+  sprintf(pC_->outString_, "%dM", pC_->controllerID_);
   status = pC_->writeMCBL2805();
   return status;
 }
@@ -295,50 +396,57 @@ asynStatus MCBL2805Axis::stop(double acceleration )
 asynStatus MCBL2805Axis::poll(bool *moving)
 { 
   int done=1;
-  double position;
-  unsigned int status;
-  unsigned int state;
-  int highLimit=0, lowLimit=0;
-  int count;
+  int position;
+  int velocity;
   asynStatus comStatus;
+  unsigned int status;
   
-  // still TO-DO !!!
-
+  // Read the Status of the controller
+  sprintf(pC_->outString_, "%dGST", pC_->controllerID_);
+  comStatus = pC_->writeReadController();
+  if (comStatus) goto skip;
+  /** 
+   * This is from the MCBL2805 manual:
+   * Calls up the actual status (7 Bits), the response string is of the form "0101011"
+	From left to right:
+	Bit 0:  1 ... Position controller active
+			0 ... Velocity controller active
+	Bit 1:  1 ... Velocity is analog or PWM
+			0 ... Velocity given at the RS-232
+	Bit 2:  1 ... Velocity is PWM (Bit1 = 1)
+			0 ... Velocity is analog (Bit1 = 1)
+	Bit 3:  1 ... Drive enabled
+			0 ... Drive disabled
+	Bit 4:  1 ... Command position has been reached
+			0 ... Command position has not yet been reached.
+	Bit 5:  1 ... Positive edge at limit switch is active
+			0 ... Negative edge at limit switch is active
+	Bit 6:  1 ... Limit switch set to high level
+			0 ... Limit switch set to low level*/
+  
+  status = atoi(&pC_->inString_[0]);
+  if ((status & 0x4) != 4) {
+	  
+		// we also need to look at the motor velocity because Bit 4 sometimes won't go to 1
+		sprintf(pC_->outString_, "%dGV", pC_->controllerID_);
+		pC_->writeReadController();
+		sscanf(pC_->inString_, "%d", &velocity);
+		
+		if (abs(velocity) > 20) {
+			done = 0;
+		}
+}
+  
+  setIntegerParam(pC_->motorStatusDone_, done);
+  *moving = done ? false:true;
+  
   // Read the current motor position
   sprintf(pC_->outString_, "%dPOS", pC_->controllerID_);
   comStatus = pC_->writeReadController();
   if (comStatus) goto skip;
-  // The response string is of the form "1TPxxx"
-  position = atof(&pC_->inString_[3]);
-  currentPosition_ = position /stepSize_;
-  setDoubleParam(pC_->motorPosition_, currentPosition_);
-
-  // Read the moving status of this motor
-  //Returns a status number: 
-  //Motor on, motion not in progress 81 
-  //Motor on, motion in progress 80 
-  //Motor off, motion not in progress 64
-  sprintf(pC_->outString_, "%dTS?", pC_->controllerID_);
-  comStatus = pC_->writeReadController();
-  if (comStatus) goto skip;
-  
-  // The response string is of the form "1TSabcdef"
-  count = sscanf(pC_->inString_, "%*dTS%*4c%x", &status);
-  if (count != 1) goto skip;
-
-  state = status & 0xff;
-  if ((state == 0x1e) || (state == 0x28)) done = 0;
-  setIntegerParam(pC_->motorStatusDone_, done);
-  *moving = done ? false:true;
-
-  // The meaning of the error bits is different for the CC, AGP, and PP
-  if ((conexModel_ == ModelConexCC) || (conexModel_ == ModelConexPP)) {
-    if (status & 0x100) lowLimit = 1;
-    if (status & 0x200) highLimit = 1;
-  }
-  
-  setIntegerParam(pC_->motorStatusLowLimit_, lowLimit);
-  setIntegerParam(pC_->motorStatusHighLimit_, highLimit);
+  // The response string is of the form "1095000"
+  sscanf(pC_->inString_, "%d", &position);
+  setDoubleParam(pC_->motorPosition_, position);
 
   skip:
   setIntegerParam(pC_->motorStatusProblem_, comStatus ? 1:0);

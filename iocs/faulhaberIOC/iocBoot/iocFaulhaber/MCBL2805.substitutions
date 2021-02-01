@@ -1,0 +1,7 @@
+file "$(MOTOR)/db/asyn_motor.db"
+{
+pattern
+  {P,            M,    DTYP,        PORT,     ADDR,  DESC,          EGU,      DIR,  VMAX,  VELO,  VBAS,  ACCL,  BDST,     BVEL,  BACC,     MRES,      PREC,  DHLM,         DLLM,   INIT}
+  {faulhaber:,   m1, "asynMotor", mcbl2805,    0,   "motor1",       mm,       Pos,  15.,    2.,    .0,    1.,    0,       1.0,    .2,	    1e-3,       3,    1095,        -30,     ""}
+}
+

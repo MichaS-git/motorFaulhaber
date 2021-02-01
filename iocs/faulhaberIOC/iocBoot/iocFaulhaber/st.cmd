@@ -15,6 +15,7 @@ dbLoadRecords("$(MOTOR)/db/motorUtil.db", "P=faulhaber:")
 
 ## 
 < MCDC2805.cmd
+#< MCBL2805.cmd
 
 iocInit
 
@@ -22,3 +23,11 @@ iocInit
 motorUtilInit("faulhaber:")
 
 # Boot complete
+
+## outcomment this for the MCBL2805 controller:
+## use the "In-Position" mode
+#dbpf "faulhaber:m1.RMOD","3"
+## RDBD at least 1 in order to avoid retrys
+#dbpf "faulhaber:m1.RDBD","1"
+## 3 seconds delay for the motor to reckon a movement as completed
+#dbpf "faulhaber:m1.DLY","3"

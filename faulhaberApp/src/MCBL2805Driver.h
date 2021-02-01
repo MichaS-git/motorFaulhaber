@@ -28,7 +28,6 @@ private:
   MCBL2805Controller *pC_;        /**< Pointer to the asynMotorController to which this axis belongs.
                                    *   Abbreviated because it is used very frequently */
   double currentPosition_;
-  double stepSize_;
   double highLimit_;
   double lowLimit_;
   

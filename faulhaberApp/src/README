@@ -47,6 +47,40 @@ NODEADR 1
 EEPSAV
 
 
+####################################################################################################
+               Faulhaber MCBL2805 driver
+				   Michael Sintschuk
+					Jan. 19, 2021
 
+This driver supports the Faulhaber MCBL2805 servo controller. It was written to control a "Guidance 
+with air-beared slides LL-S" from jfa:
+https://www.jfa.de/en/produkte/p/53/guidances-with-air-beared-slides-ll-s/
 
+It assumes, that the following settings are already saved in the EEprom:
 
+/*basic-settings*/
+REFIN
+HP0
+SOR0
+DEV50
+MAV25
+MV0
+ENCRES1903
+POR3
+I10
+LPC6000
+LCC2000
+AC100
+SP3000
+LL0
+LL-1120000
+
+EEPSAV
+
+/*homesequence-settings*/
+HL6
+HA4
+HN6
+HOSP100
+POHOSEQ0
+CAHOSEQ
